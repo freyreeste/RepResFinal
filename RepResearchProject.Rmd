@@ -1,0 +1,379 @@
+---
+title: "Damages related with Storms and other severe weather events "
+author: "Esteban R. Freyre"
+date: !r Sys.Date()
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Synopsis
+
+Storms and other severe weather events can cause both public health and economic problems for communities and municipalities. Many severe events can result in fatalities, injuries, and property damage, and preventing such outcomes to the extent possible is a key concern.
+
+This project involves exploring the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database. This database tracks characteristics of major storms and weather events in the United States, including when and where they occur, as well as estimates of any fatalities, injuries, and property damage.
+
+#### describe and summarizes your analysis in at most 10 complete sentences.
+
+### Data Processing
+
+The data for this assignment come in the form of a comma-separated-value file compressed via the bzip2 algorithm to reduce its size. You can download the file from the course web site:
+
+    Storm Data [47Mb]
+
+There is also some documentation of the database available. Here you will find how some of the variables are constructed/defined.
+
+    National Weather Service Storm Data Documentation
+    National Climatic Data Center Storm Events FAQ
+
+The events in the database start in the year 1950 and end in November 2011. In the earlier years of the database there are generally fewer events recorded, most likely due to a lack of good records. More recent years should be considered more complete.
+
+```{r}
+library(data.table)
+```
+
+```{r,cache=TRUE}
+colClasses=c("factor","character","character","character","numeric","character","factor","factor","numeric","character","character","character","character","character","character","numeric","character","character","numeric","numeric","factor","factor","numeric","numeric","numeric","character","numeric","character","character","character","character","numeric","numeric","numeric","numeric","character","numeric")
+DT<-fread("repdata_data_StormData.csv",sep = ",",header = TRUE,colClasses=colClasses,na.strings=NULL,data.table=TRUE,nThread=4,keepLeadingZeros=TRUE)
+```
+
+```{r}
+str(DT)
+```
+
+```{r}
+head(DT)
+tail(DT)
+```
+```{r}
+rbind("total NAs:"=sum(is.na(DT)))
+rbind("NAs %:"=(mean(is.na(DT)))*100)
+```
+```{r}
+library(lubridate)
+library(reshape2)
+```
+```{r}
+DT[,BGN_DATE:=mdy(colsplit(string=DT$BGN_DATE, pattern=" ",names = c("Part1", "Part2"))$Part1)]
+```
+```{r}
+head(DT[,BGN_DATE])
+summary(DT$BGN_DATE)
+```
+
+```{r}
+DT[,c("STATE__","BGN_TIME","TIME_ZONE","COUNTY","COUNTYNAME","BGN_RANGE","BGN_AZI","BGN_LOCATI","END_DATE","END_TIME","COUNTY_END","COUNTYENDN","END_RANGE","END_AZI","END_LOCATI","PROPDMGEXP","CROPDMGEXP","WFO","STATEOFFIC","ZONENAMES","LATITUDE","LONGITUDE","LATITUDE_E","LONGITUDE_","REMARKS","REFNUM"):=NULL]
+str(DT)
+```
+
+```{r}
+DT[,MONTH:=month(BGN_DATE)]
+DT[,YEAR:=year(BGN_DATE)]
+```
+
+```{r}
+head(DT)
+```
+```{r}
+myNAs <- lapply(DT, function(x) which(is.na(x)))
+{for(j in seq_along(DT)) if(length(myNAs[[j]]) > 0) set(DT, myNAs[[j]], j, 0)
+}
+```
+```{r}
+sum(is.na(DT))
+anyNA(DT, recursive=TRUE)
+```
+
+```{r}
+plot(table(DT$EVTYPE))
+plot(table(DT$FATALITIES))
+plot(table(DT$INJURIES))
+plot(table(DT$PROPDMG))
+plot(table(DT$CROPDMG))
+```
+
+```{r}
+setkey(DT,EVTYPE,YEAR)
+```
+### which types of events are most harmful to population health?
+
+According to NOAA the data recording start from Jan. 1950. At that time they recorded one event type, tornado. They add more events gradually and only from Jan. 1996 they start recording all events type. Since our objective is comparing the effects of different weather events, do we need to include all years, even it has only single event type? We will cut data begining 1996
+
+```{r}
+ans1<-DT[,.(totalfat=sum(FATALITIES,na.rm = TRUE),totalinjur=sum(INJURIES,na.rm = TRUE),meanfat=mean(FATALITIES,na.rm = TRUE),meaninju=mean(INJURIES,na.rm = TRUE)),by=.(EVTYPE,YEAR)][YEAR>1995][totalinjur>0][order(YEAR,-totalinjur,totalfat)]
+ans1
+```
+
+```{r}
+library(ggplot2)
+qplot(YEAR,totalinjur,data=ans1)
+qplot(YEAR,totalfat,data=ans1)
+```
+
+```{r}
+hist(ans1$totalfat, col="green", breaks = 200, main = "Total Fatalities per EVTYPE per Year",xlab = " Fatalities")
+hist(ans1$totalinjur, col="blue", breaks = 200, main = "Total Injuries per EVTYPE per Year",xlab = " Injuries")
+```
+
+```{r}
+ans2<-DT[,.(yearfat=sum(FATALITIES,na.rm = TRUE),yearinjur=sum(INJURIES,na.rm = TRUE),yearmeanfat=mean(FATALITIES,na.rm = TRUE),yearmeaninju=mean(INJURIES,na.rm = TRUE)),by=YEAR][YEAR>1995][order(YEAR)]
+ans2
+```
+```{r}
+ggplot(ans2)+geom_line(aes(x=YEAR,y=yearfat))+labs(title ="total fatalities per year")
+```
+```{r}
+ggplot(ans2)+geom_line(aes(x=YEAR,y=yearinjur))+labs(title ="total injuries per year")
+```
+
+```{r}
+ans3<-DT[,.(TOTFatal=sum(FATALITIES,na.rm = TRUE),TOTInjur=sum(INJURIES,na.rm = TRUE)),by=EVTYPE][order(-TOTFatal,-TOTInjur)]
+ans3
+```
+  
+```{r}
+ans4<-DT[,.(TOTFatal=sum(FATALITIES,na.rm = TRUE),TOTInjur=sum(INJURIES,na.rm = TRUE)),by=.(EVTYPE,STATE)][order(-TOTFatal,-TOTInjur)]
+ans4
+```
+
+```{r}
+plot(ans4$EVTYPE,ans5$TOTFatal,data=ans4)
+```
+```{r}
+ans5<-DT[,.(TOTFatal=sum(FATALITIES,na.rm = TRUE),TOTInjur=sum(INJURIES,na.rm = TRUE)),by=STATE][order(-TOTFatal,-TOTInjur)]
+ans5
+```
+
+```{r}
+ans6<-DT[,.(.N), by = .(EVTYPE,STATE)][order(STATE,-N)]
+ans6
+```
+```{r}
+ans7<-DT[,.(.N), by = .(EVTYPE)][order(-N)]
+ans7
+```
+```{r}
+ans8<-DT[,.(.N), by = STATE][order(-N)]
+ans8
+```
+```{r}
+ans9<-DT[,.(TOTprpdmg=sum(PROPDMG,na.rm = TRUE),TOTcropdmg=sum(CROPDMG,na.rm = TRUE),meanprpdmg=mean(PROPDMG,na.rm = TRUE),meancropdmg=mean(CROPDMG,na.rm = TRUE)),by=YEAR][YEAR>1995][order(YEAR)]
+ans9
+```
+
+
+
+```{r}
+ggplot(ans9)+geom_line(aes(x=YEAR,y=TOTprpdmg))+labs(title ="Total Property Damage per Year")
+```
+```{r}
+ggplot(ans9)+geom_line(aes(x=YEAR,y=TOTcropdmg))+labs(title ="Total Crop Damage per Year")
+```
+```{r}
+ans10<-DT[,.(TOTprpdmg=sum(PROPDMG,na.rm = TRUE),TOTcropdmg=sum(CROPDMG,na.rm = TRUE),meanprpdmg=mean(PROPDMG,na.rm = TRUE),meancropdmg=mean(CROPDMG,na.rm = TRUE)),by=.(YEAR,STATE)][YEAR>1995][order(YEAR,-TOTprpdmg,-TOTcropdmg)]
+ans10
+```
+```{r}
+ans11<-DT[,.(TOTprpdmg=sum(PROPDMG,na.rm = TRUE),TOTcropdmg=sum(CROPDMG,na.rm = TRUE),meanprpdmg=mean(PROPDMG,na.rm =TRUE)),by=.(STATE,YEAR)][YEAR>1995][order(STATE,YEAR,-TOTprpdmg,-TOTcropdmg)]
+ans11
+```
+```{r}
+qplot(TOTcropdmg,TOTprpdmg,data=ans11,color=STATE)
+```
+
+```{r}
+ans12<-DT[,.(TOTprpdmg=sum(PROPDMG,na.rm = TRUE),TOTcropdmg=sum(CROPDMG,na.rm = TRUE)),by=STATE][order(-TOTprpdmg,-TOTcropdmg)]
+ans12
+```
+```{r}
+ans13<-DT[,.(TOTprpdmg=sum(PROPDMG,na.rm = TRUE),TOTcropdmg=sum(CROPDMG,na.rm = TRUE)),by=EVTYPE][order(-TOTprpdmg,-TOTcropdmg)]
+ans13
+```
+```{r}
+library(caret)
+```
+```{r,cache=TRUE}
+# create training and test sets
+inTrain <- createDataPartition(y=DT$FATALITIES,p=0.25, list=FALSE)
+training<- DT[inTrain,]
+testing<- DT[-inTrain,]
+```
+```{r}
+dim(training)
+dim(testing)
+```
+
+```{r}
+library(MASS)
+```
+```{r, cache=TRUE}
+lm1<-lm(FATALITIES~as.factor(EVTYPE),data =training)
+```
+```{r}
+summary(lm1)
+```
+```{r, cache=TRUE}
+lm2<-lm(INJURIES~as.factor(EVTYPE),data = training)
+```
+```{r}
+summary(lm2)
+```
+```{r, cache=TRUE}
+lm3<-lm(FATALITIES~as.factor(EVTYPE)+PROPDMG+as.factor(STATE),data=training)
+```
+```{r}
+summary(lm3)
+```
+
+```{r}
+lm4<-update(lm3,FATALITIES~as.factor(EVTYPE)+PROPDMG+as.factor(STATE)+as.factor(F)+as.factor(MAG))
+```
+```{r}
+summary(lm4)
+```
+```{r}
+anova(lm1,lm3,lm4)
+```
+
+Correlation Matrix Visualization  
+```{r, cache = TRUE}
+library(corrplot)
+```
+```{r}
+corrPlot <-cor(training[,-c("BGN_DATE","STATE","EVTYPE","F","MAG")])
+corrplot(corrPlot, method="color")
+```
+    
+PCA analysis
+```{r}
+Train2<-prcomp(training[,-c("BGN_DATE","STATE","EVTYPE","F","MAG")],tol=0.04,retx = TRUE,center = TRUE,scale.=TRUE)
+summary(Train2)
+```
+```{r}
+library(ggbiplot)
+```
+  
+```{r}
+k<-ggscatmat(training, columns = c("FATALITIES","INJURIES"), color="EVTYPE", alpha=0.3)
+print(k)
+```
+
+
+setting parallalization up
+```{r}
+library(doParallel)
+cl <- makePSOCKcluster(4)
+registerDoParallel(cl)
+```
+Checking for near-zero-variance predictors
+###  which types of events have the greatest economic consequences?
+
+In the new tables (post-2012), it looks like PROPDMGEXP is gone, and DAMAGE_PROPERTY contains the data that was previously separated into PROPDMG and PROPDMGEXP.
+
+&gt; head(data$DAMAGE_PROPERTY) 
+[1] 0   1K  .5K 0   .5K 2K 
+
+That explains why “20”,“3” is now corrected into “203”, and so on. Looks like the “+” and “-” were entered by under-trained staff to indicate that the damage is more than x or less than x.
+
+So the conclusion is that the malformed rows are indeed caused by improper handling, and they were fixed during the 2012 update. My approach was to ignore all of them because these amounts are negligible when we are talking about sums that go into the billions.
+
+Note: Looks like all data with EXP numeric values only happened in the range of 1994-1995 period which is very small compared to overall data. 
+
+```{r}
+lm5<-lm(PROPDMG~as.factor(EVTYPE),data = training)
+```
+```{r}
+summary(lm5)
+```
+
+### Results
+
+Review criteria
+
+Has either a (1) valid RPubs URL pointing to a data analysis document for this assignment been submitted; or (2) a complete PDF file presenting the data analysis been uploaded?
+
+Is the document written in English?
+
+Does the analysis include description and justification for any data transformations?
+
+Does the document have a title that briefly summarizes the data analysis?
+
+Does the document have a synopsis that describes and summarizes the data analysis in less than 10 sentences?
+
+Is there a section titled "Data Processing" that describes how the data were loaded into R and processed for analysis?
+
+Is there a section titled "Results" where the main results are presented?
+
+Is there at least one figure in the document that contains a plot?
+
+Are there at most 3 figures in this document?
+
+Does the analysis start from the raw data file (i.e. the original .csv.bz2 file)?
+
+Does the analysis address the question of which types of events are most harmful to population health?
+
+Does the analysis address the question of which types of events have the greatest economic consequences?
+
+Do all the results of the analysis (i.e. figures, tables, numerical summaries) appear to be reproducible?
+
+Do the figure(s) have descriptive captions (i.e. there is a description near the figure of what is happening in the figure)?
+
+As far as you can determine, does it appear that the work submitted for this project is the work of the student who submitted it?
+
+### Assignment
+
+The basic goal of this assignment is to explore the NOAA Storm Database and answer some basic questions about severe weather events. You must use the database to answer the questions below and show the code for your entire analysis. Your analysis can consist of tables, figures, or other summaries. You may use any R package you want to support your analysis.
+Questions
+
+### Your data analysis must address the following questions:
+
+Across the United States, which types of events (as indicated in the EVTYPE variable) are most harmful with respect to population health?
+
+Across the United States, which types of events have the greatest economic consequences?
+
+Consider writing your report as if it were to be read by a government or municipal manager who might be responsible for preparing for severe weather events and will need to prioritize resources for different types of events. However, there is no need to make any specific recommendations in your report.
+
+Requirements
+
+For this assignment you will need some specific tools
+
+RStudio: You will need RStudio to publish your completed analysis document to RPubs. 
+
+You can also use RStudio to edit/write your analysis.
+knitr: You will need the knitr package in order to compile your R Markdown document and convert it to HTML
+
+Document Layout
+
+Language: Your document should be written in English.
+
+Title: Your document should have a title that briefly summarizes your data analysis
+
+Synopsis: Immediately after the title, there should be a synopsis which describes and summarizes your analysis in at most 10 complete sentences.
+
+There should be a section titled Data Processing which describes (in words and code) how the data were loaded into R and processed for analysis. In particular, your analysis must start from the raw CSV file containing the data. You cannot do any preprocessing outside the document. If preprocessing is time-consuming you may consider using the cache = TRUE option for certain code chunks.
+
+There should be a section titled Results in which your results are presented.
+You may have other sections in your analysis, but Data Processing and Results are required.
+    The analysis document must have at least one figure containing a plot.
+    Your analysis must have no more than three figures. Figures may have multiple plots in them (i.e. panel plots), but there cannot be more than three figures total.
+    You must show all your code for the work in your analysis document. This may make the document a bit verbose, but that is okay. In general, you should ensure that echo = TRUE for every code chunk (this is the default setting in knitr).
+
+Publishing Your Analysis
+
+For this assignment you will need to publish your analysis on RPubs.com. If you do not already have an account, then you will have to create a new account. After you have completed writing your analysis in RStudio, you can publish it to RPubs by doing the following:
+
+    In RStudio, make sure your R Markdown document (.Rmd\color{red}{\verb|.Rmd|}.Rmd) document is loaded in the editor
+    Click the Knit HTML\color{red}{\verb|Knit HTML|}KnitHTML button in the doc toolbar to preview your document.
+    In the preview window, click the Publish\color{red}{\verb|Publish|}Publish button.
+
+Once your document is published to RPubs, you should get a unique URL to that document. Make a note of this URL as you will need it to submit your assignment.
+
+NOTE: If you are having trouble connecting with RPubs due to proxy-related or other issues, you can upload your final analysis document file as a PDF to Coursera instead.
+
+Submitting Your Assignment
+
+In order to submit this assignment, you must copy the RPubs URL for your completed data analysis document in to the peer assessment question.
+
+If you choose to submit as a PDF, please insert an obvious placeholder URL (e.g. https://google.com) in order to allow submission.
