@@ -1,0 +1,303 @@
+---
+title: 'Damages related with Storms and other severe weather events '
+author: "Esteban R. Freyre"
+date: "10/17/2019"
+output: html_document
+  
+---
+
+### Synopsis
+
+Storms and other severe weather events can cause both public health and economic problems for communities and municipalities. Many severe events can result in fatalities, injuries, and property damage, and preventing such outcomes to the extent possible is a key concern.
+
+This project involves exploring the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database. This database tracks characteristics of major storms and weather events in the United States, including when and where they occur, as well as estimates of any fatalities, injuries, and property damage.
+
+### Assignment
+
+The basic goal of this assignment is to explore the NOAA Storm Database and answer some basic questions about severe weather events. You must use the database to answer the questions below and show the code for your entire analysis. Your analysis can consist of tables, figures, or other summaries. You may use any R package you want to support your analysis.
+
+Consider writing your report as if it were to be read by a government or municipal manager who might be responsible for preparing for severe weather events and will need to prioritize resources for different types of events. However, there is no need to make any specific recommendations in your report.
+
+### Data Processing
+
+Since the size of the data is quite big the data.table package is used for faster and better efficiency reading
+```{r message=FALSE, warning=FALSE}
+library(data.table)
+```
+The data for this assignment comes in the form of a comma-separated-value file compressed via the bzip2 algorithm to reduce its size. You can download the file from the course web site:
+
+    Storm Data [47Mb]
+
+There is also some documentation of the database available. Here you will find how some of the variables are constructed/defined.
+
+    National Weather Service Storm Data Documentation
+    National Climatic Data Center Storm Events FAQ
+
+The events in the database start in the year 1950 and end in November 2011. In the earlier years of the database there are generally fewer events recorded, most likely due to a lack of good records. More recent years should be considered more complete.
+
+For sake of better columns class settings we define column classes when loading raw data.
+
+```{r cache=TRUE}
+colClasses=c("factor","character","character","character","numeric","character","factor","factor","numeric","character","character","character","character","character","character","numeric","character","character","numeric","numeric","factor","factor","numeric","numeric","numeric","character","numeric","character","character","character","character","numeric","numeric","numeric","numeric","character","numeric")
+DT<-fread("repdata_data_StormData.csv",sep = ",",header = TRUE,colClasses=colClasses,na.strings=NULL,data.table=TRUE,nThread=4,keepLeadingZeros=TRUE)
+```
+data summary
+```{r}
+str(DT)
+```
+
+Let's see first rows of the data table
+```{r}
+head(DT)
+```
+
+total number of NAs and percentaje they represent to asses significance
+```{r}
+rbind("total NAs:"=sum(is.na(DT)))
+rbind("NAs %:"=(mean(is.na(DT)))*100)
+```
+
+We need to solve some problems with Begin date column thus packages for handling date and time classes are loaded
+```{r message=FALSE, warning=FALSE}
+library(lubridate)
+library(reshape2)
+```
+```{r}
+DT[,BGN_DATE:=mdy(colsplit(string=DT$BGN_DATE, pattern=" ",names = c("Part1", "Part2"))$Part1)]
+```
+
+Check data problems are solved
+```{r}
+head(DT[,BGN_DATE])
+summary(DT$BGN_DATE)
+```
+
+Remove not used columns so that the file size is more handy for computations
+```{r}
+DT[,c("STATE__","BGN_TIME","TIME_ZONE","COUNTY","COUNTYNAME","BGN_RANGE","BGN_AZI","BGN_LOCATI","END_DATE","END_TIME","COUNTY_END","COUNTYENDN","END_RANGE","END_AZI","END_LOCATI","PROPDMGEXP","CROPDMGEXP","WFO","STATEOFFIC","ZONENAMES","LATITUDE","LONGITUDE","LATITUDE_E","LONGITUDE_","REMARKS","REFNUM"):=NULL]
+str(DT)
+```
+
+Agregate new month and year columns for better clasifications and summaries
+```{r}
+DT[,MONTH:=month(BGN_DATE)]
+DT[,YEAR:=year(BGN_DATE)]
+head(DT)
+```
+
+Replace NAs rows with 0 and check results
+```{r}
+myNAs <- lapply(DT, function(x) which(is.na(x)))
+{for(j in seq_along(DT)) if(length(myNAs[[j]]) > 0) set(DT, myNAs[[j]], j, 0)
+}
+
+sum(is.na(DT))
+anyNA(DT, recursive=TRUE)
+```
+
+Set Keys in data table for fast ordering
+```{r}
+setkey(DT,EVTYPE,YEAR)
+```
+### which types of events are most harmful to population health?
+
+According to NOAA the data recording start from Jan. 1950. At that time they recorded one event type, tornado. They add more events gradually and only from Jan. 1996 they start recording all events type. Since our objective is comparing the effects of different weather events, do we need to include all years, even it has only single event type? We will cut data begining 1996
+
+Total Fatalities and Injuries per year and event type with corresponding means
+```{r cache=TRUE}
+ans1<-DT[,.(totalfat=sum(FATALITIES,na.rm = TRUE),totalinjur=sum(INJURIES,na.rm = TRUE),meanfat=mean(FATALITIES,na.rm = TRUE),meaninju=mean(INJURIES,na.rm = TRUE)),by=.(EVTYPE,YEAR)][YEAR>1995][totalinjur>0][order(YEAR,-totalinjur,totalfat)]
+ans1
+```
+
+Total Fatalities and Injuries per Year with corresponding means
+
+```{r cache=TRUE}
+ans2<-DT[,.(yearfat=sum(FATALITIES,na.rm = TRUE),yearinjur=sum(INJURIES,na.rm = TRUE),yearmeanfat=mean(FATALITIES,na.rm = TRUE),yearmeaninju=mean(INJURIES,na.rm = TRUE)),by=YEAR][YEAR>1995][order(YEAR)]
+ans2
+```
+```{r}
+library(ggplot2)
+ggplot(ans2)+geom_line(aes(x=YEAR,y=yearfat))+labs(title ="total fatalities per year")
+```
+
+Total Fatalities and Injuries per event type ordered decreasinggly
+
+```{r cache=TRUE}
+ans3<-DT[,.(TOTFatal=sum(FATALITIES,na.rm = TRUE),TOTInjur=sum(INJURIES,na.rm = TRUE)),by=EVTYPE][order(-TOTFatal,-TOTInjur)]
+ans3
+```
+
+Total Fatalities and Injuries by event type and State ordered decreasinggly
+
+```{r}
+ans4<-DT[,.(TOTFatal=sum(FATALITIES,na.rm = TRUE),TOTInjur=sum(INJURIES,na.rm = TRUE)),by=.(EVTYPE,STATE)][order(-TOTFatal,-TOTInjur)]
+ans4
+```
+
+Total Fatalities and Injuries per State ordered decreasingly
+
+```{r}
+ans5<-DT[,.(TOTFatal=sum(FATALITIES,na.rm = TRUE),TOTInjur=sum(INJURIES,na.rm = TRUE)),by=STATE][order(-TOTFatal,-TOTInjur)]
+ans5
+```
+
+###  which types of events have the greatest economic consequences?
+
+In the new tables (post-2012), it looks like PROPDMGEXP is gone, and DAMAGE_PROPERTY contains the data that was previously separated into PROPDMG and PROPDMGEXP.
+
+That explains why 20, 3 is now corrected into 203, and so on. Looks like the + and - were entered by under-trained staff to indicate that the damage is more than x or less than x.
+
+So the conclusion is that the malformed rows are indeed caused by improper handling, and they were fixed during the 2012 update. My approach was to ignore all of them because these amounts are negligible when we are talking about sums that go into the billions.
+
+Note: Looks like all data with EXP numeric values only happened in the range of 1994-1995 period which is very small compared to overall data. 
+
+Event Type frequencies per State ordered decreasingly
+```{r cache=TRUE}
+ans6<-DT[,.(.N), by = .(EVTYPE,STATE)][order(STATE,-N)]
+ans6
+```
+
+Frequencies of event type ordered decreasingly
+```{r cache=TRUE}
+ans7<-DT[,.(.N), by = .(EVTYPE)][order(-N)]
+ans7
+```
+
+Number of events per State ordered decreasingly
+```{r}
+ans8<-DT[,.(.N), by = STATE][order(-N)]
+ans8
+```
+
+Total property and crop damage per year with corresponding means
+```{r cache=TRUE}
+ans9<-DT[,.(TOTprpdmg=sum(PROPDMG,na.rm = TRUE),TOTcropdmg=sum(CROPDMG,na.rm = TRUE),meanprpdmg=mean(PROPDMG,na.rm = TRUE),meancropdmg=mean(CROPDMG,na.rm = TRUE)),by=YEAR][YEAR>1995][order(YEAR)]
+ans9
+```
+
+Let's graphic the table above
+```{r}
+ggplot(ans9)+geom_line(aes(x=YEAR,y=TOTprpdmg))+labs(title ="Total Property Damage per Year")
+```
+
+Total property and crop damages per year by State and corresponding means ordered decreasingly
+```{r cache=TRUE}
+ans10<-DT[,.(TOTprpdmg=sum(PROPDMG,na.rm = TRUE),TOTcropdmg=sum(CROPDMG,na.rm = TRUE),meanprpdmg=mean(PROPDMG,na.rm = TRUE),meancropdmg=mean(CROPDMG,na.rm = TRUE)),by=.(YEAR,STATE)][YEAR>1995][order(YEAR,-TOTprpdmg,-TOTcropdmg)]
+ans10
+```
+
+Total property and crop damages per by State and years with corresponding means ordered decreasingly
+```{r cache=TRUE}
+ans11<-DT[,.(TOTprpdmg=sum(PROPDMG,na.rm = TRUE),TOTcropdmg=sum(CROPDMG,na.rm = TRUE),meanprpdmg=mean(PROPDMG,na.rm =TRUE)),by=.(STATE,YEAR)][YEAR>1995][order(STATE,YEAR,-TOTprpdmg,-TOTcropdmg)]
+ans11
+```
+
+Let's graphic the table above
+```{r}
+qplot(TOTcropdmg,TOTprpdmg,data=ans11,color=STATE)
+```
+
+Total property and crop damages by State ordered decreasingly
+```{r cache=TRUE}
+ans12<-DT[,.(TOTprpdmg=sum(PROPDMG,na.rm = TRUE),TOTcropdmg=sum(CROPDMG,na.rm = TRUE)),by=STATE][order(-TOTprpdmg,-TOTcropdmg)]
+ans12
+```
+
+Total property and crop damages by event type ordered decreasingly
+```{r cache=TRUE}
+ans13<-DT[,.(TOTprpdmg=sum(PROPDMG,na.rm = TRUE),TOTcropdmg=sum(CROPDMG,na.rm = TRUE)),by=EVTYPE][order(-TOTprpdmg,-TOTcropdmg)]
+ans13
+```
+
+Since the data size is to big for handling we will use Caret package to slice the sample data smaller for some statistical models
+```{r message=FALSE, warning=FALSE}
+library(caret)
+```
+```{r cache=TRUE}
+# create training and test sets
+inTrain <- createDataPartition(y=DT$FATALITIES,p=0.1, list=FALSE)
+training<- DT[inTrain,]
+testing<- DT[-inTrain,]
+```
+```{r}
+dim(training)
+dim(testing)
+```
+
+Some linear regression models are shown for statistical inference
+
+```{r cache=TRUE}
+lm1<-lm(FATALITIES~as.factor(EVTYPE),data =training)
+```
+```{r cache=TRUE}
+summary(lm1)
+```
+```{r cache=TRUE}
+lm2<-lm(INJURIES~as.factor(EVTYPE),data = training)
+```
+```{r cache=TRUE}
+summary(lm2)
+```
+```{r cache=TRUE}
+lm3<-lm(FATALITIES~as.factor(EVTYPE)+PROPDMG+as.factor(STATE),data=training)
+```
+```{r cache=TRUE}
+summary(lm3)
+```
+
+```{r cache=TRUE}
+lm4<-update(lm3,FATALITIES~as.factor(EVTYPE)+PROPDMG+as.factor(STATE)+as.factor(F)+as.factor(MAG))
+```
+```{r cache=TRUE}
+summary(lm4)
+```
+```{r cache=TRUE}
+anova(lm1,lm3,lm4)
+```
+
+PCA analysis
+```{r cache=TRUE}
+Train2<-prcomp(training[,-c("BGN_DATE","STATE","EVTYPE","F","MAG")],tol=0.04,retx = TRUE,center = TRUE,scale.=TRUE)
+summary(Train2)
+```
+
+```{r cache=TRUE}
+lm5<-lm(PROPDMG~as.factor(EVTYPE),data = training)
+```
+```{r cache=TRUE}
+summary(lm5)
+```
+
+### Results
+
+Tornados win in both questions, either fatalities, injuries or economic damages. Flash flood is the second in order for crop damage
+```{r echo=FALSE, cache=TRUE}
+head(ans3,10)
+head(ans13,10)
+```
+
+The Event Types most frequent are:
+```{r echo=FALSE, cache=TRUE}
+head(ans7,10)
+```
+The States with most event types are:
+```{r,echo=FALSE}
+head(ans8,10)
+```
+Review criteria
+
+Has either a (1) valid RPubs URL pointing to a data analysis document for this assignment been submitted; or (2) a complete PDF file presenting the data analysis been uploaded?
+
+Are there at most 3 figures in this document?
+
+### Your data analysis must address the following questions:
+
+Across the United States, which types of events (as indicated in the EVTYPE variable) are most harmful with respect to population health? The most harmful events across USA for population health considering fatalities and injuries related are: 
+```{r echo=FALSE}
+head(ans3,10)
+```
+
+Across the United States, which types of events have the greatest economic consequences? The events across USA with the greatest economic consequences considering property damage and crops damage are:
+```{r echo=FALSE}
+head(ans13,10)
+```
